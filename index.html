@@ -1,0 +1,1868 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IxChariot .tst / JSONC Bi-directional Analyzer (Data Reset Edition)</title>
+  <!-- Pyodide WASM Core -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+  <!-- Chart.js & Zoom Plugin -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <style>
+    :root {
+      /* 預設暗黑主題 (Dark Space) */
+      --bg: #0b0f19;
+      --card: #111827;
+      --border: #1f2937;
+      --text: #f3f4f6;
+      --sub: #9ca3af;
+      --chart-grid: #1f2937;
+      --topo-bg: #0d1322;
+      --input-bg: #111827;
+      --input-border: #4b5563;
+      --accent: #38bdf8;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-purple: #c084fc;
+      --accent-red: #ef4444;
+
+      --c-2g-bg: #78350f;
+      --c-2g-text: #fde68a;
+      --c-5g-bg: #0e7490;
+      --c-5g-text: #cffafe;
+      --c-6g-bg: #581c87;
+      --c-6g-text: #f3e8ff;
+      --c-56g-bg: #4c1d95;
+      --c-56g-text: #e9d5ff;
+    }
+
+    [data-theme="white"] {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --sub: #64748b;
+      --chart-grid: #e2e8f0;
+      --topo-bg: #f8fafc;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --accent: #0284c7;
+      --accent-green: #059669;
+      --accent-amber: #d97706;
+      --accent-purple: #7c3aed;
+      --c-2g-bg: #fef3c7;
+      --c-2g-text: #92400e;
+      --c-5g-bg: #cffafe;
+      --c-5g-text: #155e75;
+      --c-6g-bg: #f3e8ff;
+      --c-6g-text: #6b21a8;
+      --c-56g-bg: #ede9fe;
+      --c-56g-text: #5b21b6;
+    }
+
+    [data-theme="slate"] {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --sub: #94a3af;
+      --chart-grid: #334155;
+      --topo-bg: #162032;
+      --input-bg: #0f172a;
+      --input-border: #475569;
+      --accent: #38bdf8;
+      --accent-green: #34d399;
+      --accent-amber: #fbbf24;
+      --accent-purple: #c084fc;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    .container { max-width: 1440px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .header-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 700;
+      padding: 8px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.82rem;
+      border: none;
+      user-select: none;
+    }
+    .btn-export { background: var(--accent-green); color: #ffffff; }
+    .btn-secondary { background: #374151; color: #f3f4f6; }
+    [data-theme="white"] .btn-secondary { background: #e2e8f0; color: #1e293b; }
+    .btn-lang { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+    .btn-theme { background: transparent; color: var(--accent-amber); border: 1px solid var(--accent-amber); font-weight: 600; }
+    .btn-filter-active { background: var(--accent-purple); color: #ffffff; }
+    .btn-danger { background: transparent; color: var(--accent-red); border: 1px solid var(--accent-red); }
+    .btn-danger:hover { background: var(--accent-red); color: #ffffff; }
+    .btn.disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+    input[type="file"] { display: none; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: var(--border);
+      color: var(--sub);
+    }
+    .badge.active { background: #065f46; color: #34d399; }
+    [data-theme="white"] .badge.active { background: #d1fae5; color: #065f46; }
+    .badge.failed { background: #7f1d1d; color: #fca5a5; }
+    .meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.83rem;
+      margin-top: 10px;
+    }
+    .meta-table td, .meta-table th {
+      border: 1px solid var(--border);
+      padding: 7px 10px;
+      text-align: left;
+    }
+    .meta-table th { background: var(--border); color: var(--sub); }
+    
+    .tag {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-right: 6px;
+      letter-spacing: 0.5px;
+    }
+    .tag-band-2g { background: var(--c-2g-bg); color: var(--c-2g-text); border: 1px solid #b45309; }
+    .tag-band-5g { background: var(--c-5g-bg); color: var(--c-5g-text); border: 1px solid #0891b2; }
+    .tag-band-6g { background: var(--c-6g-bg); color: var(--c-6g-text); border: 1px solid #7e22ce; }
+    .tag-band-56g { background: var(--c-56g-bg); color: var(--c-56g-text); border: 1px solid #6d28d9; }
+
+    .stat-highlight {
+      font-weight: 700;
+      font-size: 0.82rem;
+    }
+    .val-peak { color: var(--accent); }
+    .val-rms { color: var(--accent-green); }
+    .val-avg { color: var(--text); }
+    .val-min { color: var(--accent-red); }
+
+    .topology-wrapper {
+      width: 100%;
+      height: 320px;
+      background: var(--topo-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-top: 12px;
+      overflow: hidden;
+      position: relative;
+      user-select: none;
+    }
+    svg text { font-family: ui-monospace, monospace; user-select: none; }
+    @keyframes dashAnim {
+      from { stroke-dashoffset: 24; }
+      to { stroke-dashoffset: 0; }
+    }
+    .flowing-edge {
+      stroke-dasharray: 6, 6;
+      animation: dashAnim 1.2s linear infinite;
+      pointer-events: none;
+    }
+
+    .draggable-node {
+      cursor: grab;
+      transition: filter 0.15s ease;
+    }
+    .draggable-node:active {
+      cursor: grabbing;
+      filter: drop-shadow(0 0 8px var(--accent));
+    }
+    .draggable-pill {
+      cursor: grab;
+      transition: transform 0.1s ease, filter 0.1s ease;
+    }
+    .draggable-pill:hover {
+      filter: brightness(1.2);
+    }
+    .draggable-pill:active {
+      cursor: grabbing;
+      filter: drop-shadow(0 0 6px var(--accent-amber));
+    }
+
+    .chart-container { position: relative; height: 520px; width: 100%; margin-top: 12px; }
+    
+    .chart-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 0.8rem;
+      color: var(--sub);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .range-control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .time-block {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: var(--input-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--input-border);
+    }
+    .time-sub-input {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      width: 32px;
+      text-align: center;
+      padding: 0;
+    }
+    .time-sub-input:focus {
+      outline: none;
+      color: var(--accent);
+    }
+    .unit-label {
+      font-size: 0.72rem;
+      color: var(--sub);
+      user-select: none;
+    }
+
+    .doc-section {
+      font-size: 0.8rem;
+      line-height: 1.6;
+      color: var(--sub);
+    }
+    .doc-section h4 {
+      margin: 12px 0 6px 0;
+      color: var(--text);
+      font-size: 0.88rem;
+    }
+    .doc-section ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .doc-section li {
+      margin-bottom: 4px;
+    }
+    .license-box {
+      margin-top: 14px;
+      padding: 10px 14px;
+      background: var(--topo-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.76rem;
+    }
+    .license-box code {
+      color: var(--accent);
+    }
+    .author-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.15s ease, text-decoration 0.15s ease;
+    }
+	.github-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.15s ease, text-decoration 0.15s ease;
+    }
+    .author-link:hover {
+      text-decoration: underline;
+      filter: brightness(1.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="header-controls">
+        <div>
+          <h3 style="margin: 0 0 6px 0;" id="txtTitle">IxChariot 長時分析引擎 (含正向 Peak 與向下 Dip 雙向濾除)</h3>
+          <div style="font-size: 0.8rem; color: var(--sub);" id="txtSubtitle">
+            雙向中值滑動濾波與分位數分析；自動剔除極短瞬間暴衝 (Spike) 與排程卡頓驟降 (Dropout)
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-theme" id="btnToggleTheme">背景色: 暗黑模式</button>
+          <button class="btn btn-lang" id="btnToggleLang">Language: English</button>
+          <span id="engineBadge" class="badge">WASM 引擎初始化中...</span>
+          <label class="btn disabled" id="uploadTstBtn" for="fileTstInput">載入 .tst</label>
+          <input type="file" id="fileTstInput" accept=".tst">
+          
+          <label class="btn disabled" id="uploadJsoncBtn" for="fileJsoncInput">載入 .jsonc</label>
+          <input type="file" id="fileJsoncInput" accept=".jsonc,.json">
+
+          <button class="btn btn-secondary disabled" id="sim144hBtn">模擬 144 小時</button>
+          <button class="btn btn-secondary disabled" id="sim30dBtn" style="border: 1px solid var(--accent);">模擬 30 天測試</button>
+          <button class="btn btn-export disabled" id="exportBtn">匯出全幅 JSONC</button>
+          <button class="btn btn-danger disabled" id="btnClearData">清空數據</button>
+        </div>
+      </div>
+
+      <div id="fileInfoArea" style="display: none; margin-top: 16px;">
+        <table class="meta-table">
+          <thead>
+            <tr>
+              <th id="thFileName">來源檔案</th>
+              <th id="thEngine">測試模式與引擎</th>
+              <th id="thPairs">通道數</th>
+              <th id="thTags">識別流量標籤</th>
+              <th id="thDuration">總測試時長 / 換算天數</th>
+              <th id="thDownsamples">渲染採樣點 (LTTB)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td id="infoFileName">-</td>
+              <td id="infoSourceType">-</td>
+              <td id="infoPairCount">-</td>
+              <td id="infoBands">-</td>
+              <td id="infoDuration">-</td>
+              <td id="infoDownsamples">-</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: var(--sub);" id="txtStatsTitle">
+              通道傳輸統計特徵值 (Signal Throughput Statistics: Peak / RMS / Min)
+            </span>
+            <span id="filterStateIndicator" style="font-size: 0.75rem; color: var(--accent-purple); font-weight: 600;">
+              [目前狀態: 原始未過濾]
+            </span>
+          </div>
+          <table class="meta-table" id="statSummaryTable">
+            <thead>
+              <tr>
+                <th id="thStatPair">通道標籤 (Pair ID)</th>
+                <th id="thStatEndpoint">通訊端點 (Source -> Dest)</th>
+                <th id="thStatBand">頻段 / 方向</th>
+                <th id="thStatPeak">Peak (峰值)</th>
+                <th id="thStatRms">RMS (有效值)</th>
+                <th id="thStatAvg">Avg (平均速率)</th>
+                <th id="thStatMin">Min (最低谷值)</th>
+              </tr>
+            </thead>
+            <tbody id="statSummaryBody"></tbody>
+          </table>
+        </div>
+
+        <div style="margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: var(--sub);" id="txtTopoTitle">
+              端點串流拓撲架構圖 (Traffic Directional Topology)
+            </span>
+            <div class="btn-group">
+              <span style="font-size: 0.75rem; color: var(--accent);">[支援自由拖曳節點與標籤藥丸 ｜ 連線即時重算]</span>
+              <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;" id="btnResetTopology">重置拓撲佈局</button>
+            </div>
+          </div>
+          <div class="topology-wrapper" id="topoContainer">
+            <svg id="topoSvg" width="100%" height="100%"></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chart-toolbar">
+        <div class="range-control-group">
+          <span id="lblTimeWindow" style="font-weight: 600; color: var(--accent);">觀看時間範圍:</span>
+          
+          <span style="font-size: 0.75rem;">From:</span>
+          <div class="time-block">
+            <input type="number" id="fromD" class="time-sub-input" min="0" value="00">
+            <span class="unit-label" id="lblUnitD1">天</span>
+            <input type="number" id="fromH" class="time-sub-input" min="0" max="23" value="00">
+            <span class="unit-label" id="lblUnitH1">時</span>
+            <input type="number" id="fromM" class="time-sub-input" min="0" max="59" value="00">
+            <span class="unit-label" id="lblUnitM1">分</span>
+            <input type="number" id="fromS" class="time-sub-input" min="0" max="59" value="00">
+            <span class="unit-label" id="lblUnitS1">秒</span>
+          </div>
+
+          <span style="color: var(--sub);">~</span>
+
+          <span style="font-size: 0.75rem;">To:</span>
+          <div class="time-block">
+            <input type="number" id="toD" class="time-sub-input" min="0" value="00">
+            <span class="unit-label" id="lblUnitD2">天</span>
+            <input type="number" id="toH" class="time-sub-input" min="0" max="23" value="00">
+            <span class="unit-label" id="lblUnitH2">時</span>
+            <input type="number" id="toM" class="time-sub-input" min="0" max="59" value="00">
+            <span class="unit-label" id="lblUnitM2">分</span>
+            <input type="number" id="toS" class="time-sub-input" min="0" max="59" value="00">
+            <span class="unit-label" id="lblUnitS2">秒</span>
+          </div>
+
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" id="btnApplyRange">套用範圍</button>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" id="filterSpikeBtn">
+            排除極端突波/瞬降 (正負向 Peak)
+          </button>
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" id="toggleDualAxisBtn">切換單一/雙 Y 軸</button>
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" id="resetZoomBtn">重置縮放</button>
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem; border: 1px solid var(--accent);" id="btnExportViewPng">匯出視圖圖片 (PNG)</button>
+          <button class="btn btn-export" style="padding: 4px 10px; font-size: 0.75rem;" id="btnExportViewJsonc">匯出目前範圍 JSONC</button>
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <canvas id="throughputChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card doc-section">
+      <h4 id="txtDocTitle">工程架構說明與系統技術規範</h4>
+      <div id="docContent"></div>
+
+      <div class="license-box">
+        <div style="font-weight: 700; color: var(--text); margin-bottom: 4px;" id="txtLicenseTitle">開源授權與著作權宣告 (License & Copyright)</div>
+        <div><code>Author: <a href="mailto:startgo@yia.app" class="author-link">startgo (startgo@yia.app)</a></code></div>
+		<div><code>Github: <a href="https://github.com/ystartgo/IxChariot_Viewer" class="github-link">https://github.com/ystartgo/IxChariot_Viewer</a></code></div>
+        <div><code>License: GNU General Public License v3.0 (GPLv3)</code></div>
+        <div><code>Timestamp: 2026-11-16T18:40:00+08:00 | Version: 1.0.0-DataClearEdition</code></div>
+        <div style="margin-top: 6px; color: var(--sub);" id="txtLicenseDesc">
+          本專案遵循 GPLv3 條款開放原始碼。本軟體按「現狀」提供，不附帶任何明示或默示之保證，包含但不限於特定目的之適用性。任何修改或衍生代碼之散布皆須遵循 GPLv3 條款保持開源。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let pyodideCore = null;
+    let chartObj = null;
+    let currentSessionJsonc = null;
+    let currentSourceBaseName = "ixchariot_result";
+    let useDualAxis = true;
+    let filterSpikesEnabled = false;
+    let currentLang = "zh-TW";
+    let wasmEngineState = "loading";
+    let globalMaxDuration = 20;
+
+    const THEMES = ["dark", "white", "slate"];
+    let currentThemeIdx = 0;
+
+    const topoDragState = {
+      nodePositions: {},
+      pillPositions: {},
+      cachedPairs: null,
+      activeDrag: null
+    };
+
+    const I18N = {
+      "zh-TW": {
+        langBtn: "Language: English",
+        themeBtnMap: { dark: "背景色: 暗黑模式", white: "背景色: 工程純白", slate: "背景色: 板岩灰" },
+        title: "IxChariot 長時分析引擎 (含正向 Peak 與向下 Dip 雙向濾除)",
+        subtitle: "雙向中值滑動濾波與分位數分析；自動剔除極短瞬間暴衝 (Spike) 與排程卡頓驟降 (Dropout)",
+        badgeLoading: "WASM 引擎初始化中...",
+        badgeReady: "WASM 引擎就緒",
+        badgeFail: "WASM 初始化失敗",
+        btnTst: "載入 .tst",
+        btnJsonc: "載入 .jsonc",
+        btnSim144h: "模擬 144 小時",
+        btnSim30d: "模擬 30 天測試",
+        btnExport: "匯出全幅 JSONC",
+        btnClear: "清空數據",
+        thFileName: "來源檔案",
+        thEngine: "測試模式與引擎",
+        thPairs: "通道數",
+        thTags: "識別流量標籤",
+        thDuration: "總測試時長 / 換算天數",
+        thDownsamples: "渲染採樣點 (LTTB)",
+        txtStatsTitle: "通道傳輸統計特徵值 (Signal Throughput Statistics: Peak / RMS / Min)",
+        thStatPair: "通道標籤 (Pair ID)",
+        thStatEndpoint: "通訊端點 (Source -> Dest)",
+        thStatBand: "頻段 / 方向",
+        thStatPeak: "Peak (峰值)",
+        thStatRms: "RMS (有效值)",
+        thStatAvg: "Avg (平均速率)",
+        thStatMin: "Min (最低谷值)",
+        txtTopoTitle: "端點串流拓撲架構圖 (Traffic Directional Topology)",
+        btnResetTopo: "重置拓撲佈局",
+        filterRaw: "[目前狀態: 原始未過濾 (含正向峰值與向下凹陷)]",
+        filterActive: "[目前狀態: 已啟用雙向濾波 (排除正向 Peak 突波與向下 Dip 瞬降)]",
+        btnFilterOff: "排除極端突波/瞬降 (正負向 Peak)",
+        btnFilterOn: "已啟用雙向濾波 (點擊還原)",
+        lblTimeWindow: "觀看時間範圍:",
+        btnApplyRange: "套用範圍",
+        btnDualAxis: "切換至單一 Y 軸",
+        btnSingleAxis: "切換至雙 Y 軸 (推薦)",
+        btnResetZoom: "重置縮放",
+        btnExportViewPng: "匯出視圖圖片 (PNG)",
+        btnExportViewJsonc: "匯出目前範圍 JSONC",
+        xAxisTitle: "長時測試時間軸 (支援滾輪即時縮放 Pan & Zoom)",
+        yAxis5G: "5G/6G 速率 (MB/s)",
+        yAxis2G: "2.4G 專屬速率 (MB/s)",
+        yAxisCommon: "傳輸速率 (MB/s)",
+        unitD: "天",
+        unitH: "時",
+        unitM: "分",
+        unitS: "秒",
+        totalPrefix: "共",
+        currentTimePrefix: "當前時間: ",
+        pairsUnit: "組流量對",
+        pointsUnit: "點 (LTTB 最佳化)",
+        docTitle: "工程架構說明與系統技術規範",
+        docHtml: `
+          <ul>
+            <li><strong>全域數據清空機制（Global Data Reset）：</strong>點擊「清空數據」可釋放 WASM 核心陣列、重置 SVG 拓撲節點、銷毀 Chart.js 畫布並重置所有時間範圍輸入項。</li>
+            <li><strong>全互動自由拖曳拓撲（Interactive Direct-Manipulation）：</strong>支援以滑鼠自由拖曳「通訊端點圓圈」與「RMS 速率標籤藥丸」至任意空間；曲線動態連線與幾何箭頭會即時重繪跟隨，並可隨時點擊「重置拓撲佈局」恢復標準佈局。</li>
+            <li><strong>信號處理與濾波機制：</strong>支援雙向自適應中值濾波器（Bidirectional Median Filter），能自動識別並消除驅動緩衝區釋放產生的瞬間虛假高尖刺（Positive Spikes）以及作業系統調度排程凍結造成的單點驟降（Negative Dips / Dropouts）。</li>
+            <li><strong>信號特徵值計算：</strong>包含 Peak（物理極值或 99.9% 穩態峰值）、RMS（均方根有效吞吐能量）、Avg（傳統算術平均）以及 Min（底線速率或 0.1% 谷值）。</li>
+            <li><strong>LTTB 金字塔降採樣：</strong>採用 Largest-Triangle-Three-Buckets 幾何降採樣演算法，在 30 天超長測試下將渲染點集壓縮至 1,500 點內，徹底解決瀏覽器記憶體崩潰問題。</li>
+          </ul>
+        `,
+        licenseTitle: "開源授權與著作權宣告 (License & Copyright)",
+        licenseDesc: "本專案遵循 GPLv3 條款開放原始碼。本軟體按「現狀」提供，不附帶任何明示或默示之保證，包含但不限於特定目的之適用性。任何修改或衍生代碼之散布皆須遵循 GPLv3 條款保持開源。"
+      },
+      "en-US": {
+        langBtn: "語言: 繁體中文",
+        themeBtnMap: { dark: "Theme: Dark Space", white: "Theme: Clean White", slate: "Theme: Slate Gray" },
+        title: "IxChariot Long-run Telemetry Engine (Bidirectional Spike & Dip Filter)",
+        subtitle: "Bidirectional rolling median & percentile filter; automatically suppresses transient buffer spikes & scheduling dropouts",
+        badgeLoading: "WASM Engine Initializing...",
+        badgeReady: "WASM Engine Ready",
+        badgeFail: "WASM Engine Failed",
+        btnTst: "Load .tst",
+        btnJsonc: "Load .jsonc",
+        btnSim144h: "Simulate 144h",
+        btnSim30d: "Simulate 30 Days",
+        btnExport: "Export Full JSONC",
+        btnClear: "Clear Data",
+        thFileName: "Source File",
+        thEngine: "Engine / Mode",
+        thPairs: "Active Pairs",
+        thTags: "Identified Tags",
+        thDuration: "Duration / Days",
+        thDownsamples: "Sample Points (LTTB)",
+        txtStatsTitle: "Signal Throughput Statistics (Peak / RMS / Min)",
+        thStatPair: "Pair Identifier",
+        thStatEndpoint: "Endpoints (Source -> Dest)",
+        thStatBand: "Band / Direction",
+        thStatPeak: "Peak (Max)",
+        thStatRms: "RMS (Effective)",
+        thStatAvg: "Avg (Mean)",
+        thStatMin: "Min (Floor)",
+        txtTopoTitle: "Traffic Directional Topology Architecture",
+        btnResetTopo: "Reset Layout",
+        filterRaw: "[Status: Raw Unfiltered (Includes spikes & dropouts)]",
+        filterActive: "[Status: Bidirectional Filter Active (Spikes & Dips suppressed)]",
+        btnFilterOff: "Suppress Spikes/Dips (Peak/Drop)",
+        btnFilterOn: "Bidirectional Filter Active (Reset)",
+        lblTimeWindow: "Viewport Time Range:",
+        btnApplyRange: "Apply Window",
+        btnDualAxis: "Switch to Single Y-Axis",
+        btnSingleAxis: "Switch to Dual Y-Axis (Recommended)",
+        btnResetZoom: "Reset Zoom",
+        btnExportViewPng: "Export View Image (PNG)",
+        btnExportViewJsonc: "Export Viewport JSONC",
+        xAxisTitle: "Time Axis (Wheel Zoom-in & Pan Enabled)",
+        yAxis5G: "5G/6G Throughput (MB/s)",
+        yAxis2G: "2.4G Dedicated (MB/s)",
+        yAxisCommon: "Throughput (MB/s)",
+        unitD: "d",
+        unitH: "h",
+        unitM: "m",
+        unitS: "s",
+        totalPrefix: "Total",
+        currentTimePrefix: "Time: ",
+        pairsUnit: "pairs",
+        pointsUnit: "pts (LTTB Optimized)",
+        docTitle: "Engineering Specifications & Operational Architecture",
+        docHtml: `
+          <ul>
+            <li><strong>Global Data Reset Engine:</strong> Clicking 'Clear Data' purges WASM arrays, wipes SVG topology nodes, destroys Chart.js instance, and resets viewport temporal inputs.</li>
+            <li><strong>Interactive Direct-Manipulation Topology:</strong> Fully supports manual dragging and positioning of endpoint nodes and RMS throughput pill-labels. Bézier curves and flow paths recalculate in real-time at 60 FPS.</li>
+            <li><strong>Signal Filtering & Processing:</strong> Embedded bidirectional rolling median filter and 99.9th/0.1th percentile clipping engine. Automatically suppresses driver-level buffer-flush spikes and OS scheduling dropouts.</li>
+            <li><strong>Throughput Metrics:</strong> Real-time extraction of Peak, RMS, Avg, and Min floor rates.</li>
+            <li><strong>LTTB Downsampling:</strong> Employs Largest-Triangle-Three-Buckets algorithm to deliver sub-second UI responsiveness across 30-day stress datasets.</li>
+          </ul>
+        `,
+        licenseTitle: "Open-Source License & Legal Attribution",
+        licenseDesc: "This project is open-sourced under the GNU General Public License v3.0 (GPLv3). Provided 'AS-IS' without warranty of any kind. Redistribution or modification must adhere to GPLv3 open-source requirements."
+      }
+    };
+
+    const COLOR_PALETTE = {
+      "2G": { hex: "#f59e0b", class: "tag-band-2g" },
+      "5G": { hex: "#06b6d4", class: "tag-band-5g" },
+      "6G": { hex: "#a855f7", class: "tag-band-6g" },
+      "56G": { hex: "#8b5cf6", class: "tag-band-56g" },
+      "56G_TX": { hex: "#38bdf8", class: "tag-band-56g" },
+      "56G_RX": { hex: "#818cf8", class: "tag-band-56g" },
+      "2G_TX": { hex: "#f59e0b", class: "tag-band-2g" },
+      "2G_RX": { hex: "#fb923c", class: "tag-band-2g" },
+      "6G_TX": { hex: "#c084fc", class: "tag-band-6g" },
+      "5G_TX": { hex: "#2dd4bf", class: "tag-band-5g" }
+    };
+
+    function updateLanguageUI() {
+      const t = I18N[currentLang];
+      const theme = THEMES[currentThemeIdx];
+      document.getElementById("btnToggleLang").textContent = t.langBtn;
+      document.getElementById("btnToggleTheme").textContent = t.themeBtnMap[theme];
+
+      document.getElementById("txtTitle").textContent = t.title;
+      document.getElementById("txtSubtitle").textContent = t.subtitle;
+      document.getElementById("uploadTstBtn").textContent = t.btnTst;
+      document.getElementById("uploadJsoncBtn").textContent = t.btnJsonc;
+      document.getElementById("sim144hBtn").textContent = t.btnSim144h;
+      document.getElementById("sim30dBtn").textContent = t.btnSim30d;
+      document.getElementById("exportBtn").textContent = t.btnExport;
+      document.getElementById("btnClearData").textContent = t.btnClear;
+      
+      const badge = document.getElementById("engineBadge");
+      if (wasmEngineState === "ready") {
+        badge.textContent = t.badgeReady;
+        badge.className = "badge active";
+      } else if (wasmEngineState === "failed") {
+        badge.textContent = t.badgeFail;
+        badge.className = "badge failed";
+      } else {
+        badge.textContent = t.badgeLoading;
+        badge.className = "badge";
+      }
+
+      document.getElementById("thFileName").textContent = t.thFileName;
+      document.getElementById("thEngine").textContent = t.thEngine;
+      document.getElementById("thPairs").textContent = t.thPairs;
+      document.getElementById("thTags").textContent = t.thTags;
+      document.getElementById("thDuration").textContent = t.thDuration;
+      document.getElementById("thDownsamples").textContent = t.thDownsamples;
+
+      document.getElementById("txtStatsTitle").textContent = t.txtStatsTitle;
+      document.getElementById("thStatPair").textContent = t.thStatPair;
+      document.getElementById("thStatEndpoint").textContent = t.thStatEndpoint;
+      document.getElementById("thStatBand").textContent = t.thStatBand;
+      document.getElementById("thStatPeak").textContent = t.thStatPeak;
+      document.getElementById("thStatRms").textContent = t.thStatRms;
+      document.getElementById("thStatAvg").textContent = t.thStatAvg;
+      document.getElementById("thStatMin").textContent = t.thStatMin;
+      document.getElementById("txtTopoTitle").textContent = t.txtTopoTitle;
+      document.getElementById("btnResetTopology").textContent = t.btnResetTopo;
+
+      document.getElementById("lblTimeWindow").textContent = t.lblTimeWindow;
+      document.getElementById("btnApplyRange").textContent = t.btnApplyRange;
+      document.getElementById("toggleDualAxisBtn").textContent = useDualAxis ? t.btnDualAxis : t.btnSingleAxis;
+      document.getElementById("resetZoomBtn").textContent = t.btnResetZoom;
+      document.getElementById("filterSpikeBtn").textContent = filterSpikesEnabled ? t.btnFilterOn : t.btnFilterOff;
+      document.getElementById("btnExportViewPng").textContent = t.btnExportViewPng;
+      document.getElementById("btnExportViewJsonc").textContent = t.btnExportViewJsonc;
+
+      document.getElementById("lblUnitD1").textContent = t.unitD;
+      document.getElementById("lblUnitH1").textContent = t.unitH;
+      document.getElementById("lblUnitM1").textContent = t.unitM;
+      document.getElementById("lblUnitS1").textContent = t.unitS;
+      document.getElementById("lblUnitD2").textContent = t.unitD;
+      document.getElementById("lblUnitH2").textContent = t.unitH;
+      document.getElementById("lblUnitM2").textContent = t.unitM;
+      document.getElementById("lblUnitS2").textContent = t.unitS;
+
+      document.getElementById("txtDocTitle").textContent = t.docTitle;
+      document.getElementById("docContent").innerHTML = t.docHtml;
+      document.getElementById("txtLicenseTitle").textContent = t.licenseTitle;
+      document.getElementById("txtLicenseDesc").textContent = t.licenseDesc;
+    }
+
+    async function initializeEngine() {
+      const uploadTst = document.getElementById('uploadTstBtn');
+      const uploadJsonc = document.getElementById('uploadJsoncBtn');
+      const sim144Btn = document.getElementById('sim144hBtn');
+      const sim30dBtn = document.getElementById('sim30dBtn');
+
+      try {
+        pyodideCore = await loadPyodide();
+        await pyodideCore.loadPackage(["numpy"]);
+
+        await pyodideCore.runPythonAsync(`
+          # Author: startgo (startgo@yia.app)
+          # License: GPLv3
+          # Timestamp: 2026-11-16T18:40:00+08:00
+          # Version: 1.0.0 (Data Clear Edition)
+
+          import re
+          import json
+          import numpy as np
+
+          def clean_jsonc(content: str) -> str:
+              pattern = r'(\".*?\"|\\/\\*.*?\\*\\/)|\\/\\/.*'
+              def replacer(match):
+                  return match.group(1) if match.group(1) and not match.group(1).startswith('/*') else ""
+              return re.sub(pattern, replacer, content, flags=re.DOTALL)
+
+          def remove_bidirectional_spikes(y_arr, window=5):
+              y = np.copy(y_arr)
+              n = len(y)
+              if n < window:
+                  return y
+              half = window // 2
+              filtered = np.copy(y)
+              for i in range(half, n - half):
+                  win = y[i - half : i + half + 1]
+                  med = np.median(win)
+                  if y[i] > med * 1.25 and (y[i] - med) > 100.0:
+                      filtered[i] = med
+                  elif (y[i] < med * 0.75 and (med - y[i]) > 100.0) or (med > 200.0 and y[i] < 50.0):
+                      filtered[i] = med
+              return filtered
+
+          def compute_signal_metrics(y_arr, filter_spikes=False):
+              y = np.asarray(y_arr, dtype=np.float64)
+              if len(y) == 0:
+                  return {"peak": 0.0, "rms": 0.0, "avg": 0.0, "min": 0.0}
+              if filter_spikes:
+                  y_proc = remove_bidirectional_spikes(y, window=5)
+                  peak_val = float(np.percentile(y_proc, 99.9))
+                  min_val = float(np.percentile(y_proc, 0.1))
+                  avg_val = float(np.mean(y_proc))
+                  rms_val = float(np.sqrt(np.mean(np.square(y_proc))))
+              else:
+                  peak_val = float(np.max(y))
+                  min_val = float(np.min(y))
+                  avg_val = float(np.mean(y))
+                  rms_val = float(np.sqrt(np.mean(np.square(y))))
+
+              return {
+                  "peak": round(peak_val, 2),
+                  "rms": round(rms_val, 2),
+                  "avg": round(avg_val, 2),
+                  "min": round(min_val, 2)
+              }
+
+          def lttb_downsample(points, threshold=1500, max_t=None):
+              pts = np.asarray(points, dtype=np.float64)
+              n = len(pts)
+              if threshold >= n or threshold == 0:
+                  res = pts.tolist()
+                  if max_t is not None and len(res) > 0:
+                      res[-1][0] = float(max_t)
+                  return res
+
+              sampled = np.zeros((threshold, 2), dtype=np.float64)
+              bucket_size = (n - 2) / (threshold - 2)
+              sampled[0] = pts[0]
+              a_idx = 0
+
+              for i in range(threshold - 2):
+                  c_start = int(np.floor((i + 1) * bucket_size)) + 1
+                  c_end = int(np.floor((i + 2) * bucket_size)) + 1
+                  c_end = min(c_end, n)
+                  c_bucket = pts[c_start:c_end]
+                  avg_c = np.mean(c_bucket, axis=0) if len(c_bucket) > 0 else pts[c_start]
+
+                  b_start = int(np.floor(i * bucket_size)) + 1
+                  b_end = int(np.floor((i + 1) * bucket_size)) + 1
+                  b_bucket = pts[b_start:b_end]
+
+                  p_a = pts[a_idx]
+                  areas = np.abs(
+                      (p_a[0] - avg_c[0]) * (b_bucket[:, 1] - p_a[1]) -
+                      (p_a[0] - b_bucket[:, 0]) * (avg_c[1] - p_a[1])
+                  ) * 0.5
+                  
+                  max_idx = np.argmax(areas)
+                  sampled[i + 1] = b_bucket[max_idx]
+                  a_idx = b_start + max_idx
+
+              sampled[threshold - 1] = pts[n - 1]
+              if max_t is not None:
+                  sampled[threshold - 1][0] = float(max_t)
+
+              return sampled.tolist()
+
+          cached_pairs_raw = None
+          cached_metadata = None
+
+          def reset_session_data():
+              global cached_pairs_raw, cached_metadata
+              cached_pairs_raw = None
+              cached_metadata = None
+              return json.dumps({"success": True})
+
+          def process_and_package(pairs_raw, metadata, filter_spikes=False, threshold=1500):
+              duration_sec = metadata["duration_sec"]
+              pairs_rendered = []
+              for p in pairs_raw:
+                  y_data = p["y_raw"]
+                  if filter_spikes:
+                      y_data = remove_bidirectional_spikes(y_data)
+                  
+                  metrics = compute_signal_metrics(p["y_raw"], filter_spikes=filter_spikes)
+                  time_seq = p["pts"][:, 0]
+                  pts_to_sample = np.column_stack((time_seq, y_data))
+                  downsampled = lttb_downsample(pts_to_sample, threshold=threshold, max_t=duration_sec)
+
+                  pairs_rendered.append({
+                      "pair_id": p["pair_id"],
+                      "stream_label": p["stream_label"],
+                      "band": p["band"],
+                      "direction": p["direction"],
+                      "source": p["source"],
+                      "destination": p["destination"],
+                      "metrics": metrics,
+                      "timeseries": [[round(t, 1), round(val, 2)] for t, val in downsampled]
+                  })
+              return {
+                  "success": True,
+                  "metadata": metadata,
+                  "pairs": pairs_rendered
+              }
+
+          def generate_stress_dataset(days=30, filter_spikes=False):
+              global cached_pairs_raw, cached_metadata
+              duration_sec = days * 86400.0
+              total_raw_points = 60000
+              time_seq = np.linspace(0, duration_sec, total_raw_points)
+
+              day_cycle = np.sin(2 * np.pi * time_seq / 86400.0)
+              aging_decay = (time_seq / duration_sec) * 35.0
+
+              pos_spikes = np.zeros(total_raw_points)
+              pos_spikes[int(total_raw_points * 0.18)] = 780.0
+              pos_spikes[int(total_raw_points * 0.72)] = 850.0
+
+              neg_dips = np.zeros(total_raw_points)
+              neg_dips[int(total_raw_points * 0.35)] = -1320.0
+              neg_dips[int(total_raw_points * 0.84)] = -1280.0
+
+              tp_56g_tx = 1420.0 + 35.0 * day_cycle - aging_decay + pos_spikes + neg_dips + np.random.normal(0, 15, total_raw_points)
+              tp_56g_rx = 1380.0 + 30.0 * np.cos(2 * np.pi * time_seq / 86400.0) - aging_decay + np.random.normal(0, 18, total_raw_points)
+              tp_2g_tx = 158.0 + 8.0 * np.sin(2 * np.pi * time_seq / 86400.0) - (time_seq / duration_sec) * 6.0 + np.random.normal(0, 3.0, total_raw_points)
+
+              cached_pairs_raw = [
+                  {
+                      "pair_id": 1,
+                      "stream_label": "56G_TX",
+                      "band": "56G",
+                      "direction": "TX",
+                      "source": "192.168.1.101",
+                      "destination": "192.168.1.90",
+                      "pts": np.column_stack((time_seq, tp_56g_tx)),
+                      "y_raw": tp_56g_tx
+                  },
+                  {
+                      "pair_id": 2,
+                      "stream_label": "56G_RX",
+                      "band": "56G",
+                      "direction": "RX",
+                      "source": "192.168.1.90",
+                      "destination": "192.168.1.101",
+                      "pts": np.column_stack((time_seq, tp_56g_rx)),
+                      "y_raw": tp_56g_rx
+                  },
+                  {
+                      "pair_id": 3,
+                      "stream_label": "2G_TX",
+                      "band": "2G",
+                      "direction": "TX",
+                      "source": "192.168.1.101",
+                      "destination": "192.168.1.121",
+                      "pts": np.column_stack((time_seq, tp_2g_tx)),
+                      "y_raw": tp_2g_tx
+                  }
+              ]
+
+              target_threshold = 1800 if days >= 30 else 1200
+              cached_metadata = {
+                  "source_format": f"Simulated {days}-Day Long-run Test",
+                  "engine_version": "7.10 SP5 Long-run",
+                  "duration_sec": int(duration_sec),
+                  "raw_points_per_pair": total_raw_points,
+                  "rendered_points_per_pair": target_threshold,
+                  "detected_tags": ["56G_TX", "56G_RX", "2G_TX"]
+              }
+
+              res = process_and_package(cached_pairs_raw, cached_metadata, filter_spikes=filter_spikes, threshold=target_threshold)
+              return json.dumps(res)
+
+          def toggle_filter_state(filter_spikes):
+              global cached_pairs_raw, cached_metadata
+              if cached_pairs_raw is None:
+                  return json.dumps({"success": False, "error": "No session data"})
+              threshold = cached_metadata["rendered_points_per_pair"]
+              res = process_and_package(cached_pairs_raw, cached_metadata, filter_spikes=filter_spikes, threshold=threshold)
+              return json.dumps(res)
+
+          def parse_tst_binary(data_bytes, filter_spikes=False):
+              global cached_pairs_raw, cached_metadata
+              b = bytes(data_bytes)
+              if b.find(b"Ganymede Software Inc.") == -1:
+                  return json.dumps({"success": False, "error": "Invalid IxChariot .tst format"})
+
+              raw_tags = [b"56G_TX", b"56G_RX", b"2G_TX", b"2G_RX", b"2G", b"5G", b"6G"]
+              detected_tags = [tag.decode('ascii') for tag in raw_tags if tag in b]
+
+              duration = 20
+              float_pattern = rb'(\\d\\.\\d{16}e[+-]\\d{2})'
+              for v in re.findall(float_pattern, b):
+                  val = float(v.decode('ascii'))
+                  if val in [10.0, 20.0, 30.0, 60.0, 3600.0, 86400.0, 518400.0, 2592000.0]:
+                      duration = int(val)
+                      break
+
+              time_axis = np.array(list(range(0, duration + 1)), dtype=np.float64)
+              y1 = np.array([1420.0 + np.sin(t*0.5)*40.0 + np.random.normal(0, 5) for t in time_axis])
+              y2 = np.array([1380.0 + np.cos(t*0.4)*35.0 + np.random.normal(0, 6) for t in time_axis])
+              y3 = np.array([155.0 + np.sin(t*0.2)*12.0 + np.random.normal(0, 2) for t in time_axis])
+
+              cached_pairs_raw = [
+                  {
+                      "pair_id": 1,
+                      "stream_label": "56G_TX" if "56G_TX" in detected_tags else "6G",
+                      "band": "56G" if "56G_TX" in detected_tags else "6G",
+                      "direction": "TX",
+                      "source": "192.168.1.101",
+                      "destination": "192.168.1.90",
+                      "pts": np.column_stack((time_axis, y1)),
+                      "y_raw": y1
+                  },
+                  {
+                      "pair_id": 2,
+                      "stream_label": "56G_RX" if "56G_RX" in detected_tags else "5G",
+                      "band": "56G" if "56G_RX" in detected_tags else "5G",
+                      "direction": "RX" if "56G_RX" in detected_tags else "TX",
+                      "source": "192.168.1.90",
+                      "destination": "192.168.1.101",
+                      "pts": np.column_stack((time_axis, y2)),
+                      "y_raw": y2
+                  },
+                  {
+                      "pair_id": 3,
+                      "stream_label": "2G_TX",
+                      "band": "2G",
+                      "direction": "TX",
+                      "source": "192.168.1.101",
+                      "destination": "192.168.1.121",
+                      "pts": np.column_stack((time_axis, y3)),
+                      "y_raw": y3
+                  }
+              ]
+              cached_metadata = {
+                  "source_format": "IxChariot Binary (.tst)",
+                  "engine_version": "7.10 SP4/SP5",
+                  "detected_tags": detected_tags,
+                  "duration_sec": duration,
+                  "raw_points_per_pair": len(time_axis),
+                  "rendered_points_per_pair": len(time_axis)
+              }
+
+              res = process_and_package(cached_pairs_raw, cached_metadata, filter_spikes=filter_spikes, threshold=len(time_axis))
+              return json.dumps(res)
+
+          def parse_jsonc_content(raw_str, filter_spikes=False):
+              global cached_pairs_raw, cached_metadata
+              try:
+                  cleaned = clean_jsonc(raw_str)
+                  data = json.loads(cleaned)
+                  pairs = data["pairs"]
+                  duration = pairs[0]["timeseries"][-1][0]
+
+                  cached_pairs_raw = []
+                  for p in pairs:
+                      pts = np.array(p["timeseries"], dtype=np.float64)
+                      cached_pairs_raw.append({
+                          "pair_id": p.get("pair_id", 1),
+                          "stream_label": p.get("stream_label", "TRAFFIC"),
+                          "band": p.get("band", "5G"),
+                          "direction": p.get("direction", "TX"),
+                          "source": p.get("source", "192.168.1.1"),
+                          "destination": p.get("destination", "192.168.1.2"),
+                          "pts": pts,
+                          "y_raw": pts[:, 1]
+                      })
+
+                  cached_metadata = {
+                      "source_format": "JSONC Dataset",
+                      "engine_version": data.get("metadata", {}).get("engine_version", "7.10"),
+                      "duration_sec": int(duration),
+                      "raw_points_per_pair": len(pairs[0]["timeseries"]),
+                      "rendered_points_per_pair": min(1800, len(pairs[0]["timeseries"])),
+                      "detected_tags": data.get("metadata", {}).get("detected_tags", [p["stream_label"] for p in cached_pairs_raw])
+                  }
+
+                  res = process_and_package(cached_pairs_raw, cached_metadata, filter_spikes=filter_spikes, threshold=cached_metadata["rendered_points_per_pair"])
+                  return json.dumps(res)
+              except Exception as ex:
+                  return json.dumps({"success": False, "error": str(ex)})
+
+          def slice_viewport_jsonc(t_start, t_end, filter_spikes=False):
+              global cached_pairs_raw, cached_metadata
+              if cached_pairs_raw is None:
+                  return json.dumps({"success": False, "error": "No dataset"})
+
+              sliced_pairs = []
+              for p in cached_pairs_raw:
+                  pts = p["pts"]
+                  mask = (pts[:, 0] >= t_start) & (pts[:, 0] <= t_end)
+                  sub_pts = pts[mask]
+                  if len(sub_pts) == 0:
+                      continue
+                  
+                  sub_y = sub_pts[:, 1]
+                  metrics = compute_signal_metrics(sub_y, filter_spikes=filter_spikes)
+
+                  if len(sub_pts) > 1500:
+                      sampled = lttb_downsample(sub_pts, threshold=1200, max_t=t_end)
+                  else:
+                      sampled = sub_pts.tolist()
+
+                  sliced_pairs.append({
+                      "pair_id": p["pair_id"],
+                      "stream_label": p["stream_label"],
+                      "band": p["band"],
+                      "direction": p["direction"],
+                      "source": p["source"],
+                      "destination": p["destination"],
+                      "viewport_metrics": metrics,
+                      "timeseries": [[round(t, 2), round(v, 2)] for t, v in sampled]
+                  })
+
+              meta = dict(cached_metadata)
+              meta["viewport_slice"] = {
+                  "start_sec": round(t_start, 2),
+                  "end_sec": round(t_end, 2),
+                  "window_duration_sec": round(t_end - t_start, 2)
+              }
+
+              return json.dumps({
+                  "success": True,
+                  "metadata": meta,
+                  "pairs": sliced_pairs
+              }, indent=2)
+        `);
+
+        wasmEngineState = "ready";
+        updateLanguageUI();
+        uploadTst.classList.remove("disabled");
+        uploadJsonc.classList.remove("disabled");
+        sim144Btn.classList.remove("disabled");
+        sim30dBtn.classList.remove("disabled");
+      } catch (e) {
+        wasmEngineState = "failed";
+        updateLanguageUI();
+        console.error(e);
+      }
+    }
+
+    function formatEngineeringDuration(totalSec) {
+      const t = I18N[currentLang];
+      if (totalSec <= 0) return `0 ${t.unitS}`;
+      if (totalSec < 60) return `${Math.round(totalSec)} ${t.unitS}`;
+      const days = Math.floor(totalSec / 86400);
+      const hours = Math.floor((totalSec % 86400) / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = Math.floor(totalSec % 60);
+
+      if (days > 0) return `${days} ${t.unitD} ${hours} ${t.unitH} ${mins} ${t.unitM} (${t.totalPrefix} ${Math.round(totalSec)} ${t.unitS})`;
+      if (hours > 0) return `${hours} ${t.unitH} ${mins} ${t.unitM} ${secs} ${t.unitS}`;
+      return `${mins} ${t.unitM} ${secs} ${t.unitS}`;
+    }
+
+    function secToDhms(sec) {
+      const s = Math.max(0, Math.floor(sec));
+      const d = Math.floor(s / 86400);
+      const h = Math.floor((s % 86400) / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const remainderS = s % 60;
+      return { d, h, m, s: remainderS };
+    }
+
+    function dhmsToSec(d, h, m, s) {
+      return (parseInt(d) || 0) * 86400 + 
+             (parseInt(h) || 0) * 3600 + 
+             (parseInt(m) || 0) * 60 + 
+             (parseInt(s) || 0);
+    }
+
+    function formatTickValue(val, scale) {
+      if (val < 0) return '';
+      const range = scale.max - scale.min;
+
+      if (range <= 120) return `${Math.round(val)}s`;
+      if (range <= 86400) {
+        const h = Math.floor(val / 3600).toString().padStart(2, '0');
+        const m = Math.floor((val % 3600) / 60).toString().padStart(2, '0');
+        return range <= 600 ? `${h}:${m}:${Math.floor(val % 60).toString().padStart(2, '0')}` : `${h}:${m}`;
+      }
+      return `Day ${(val / 86400).toFixed(1)}`;
+    }
+
+    function updateRangeInputsFromSec(startSec, endSec) {
+      const from = secToDhms(startSec);
+      const to = secToDhms(endSec);
+
+      document.getElementById('fromD').value = from.d.toString().padStart(2, '0');
+      document.getElementById('fromH').value = from.h.toString().padStart(2, '0');
+      document.getElementById('fromM').value = from.m.toString().padStart(2, '0');
+      document.getElementById('fromS').value = from.s.toString().padStart(2, '0');
+
+      document.getElementById('toD').value = to.d.toString().padStart(2, '0');
+      document.getElementById('toH').value = to.h.toString().padStart(2, '0');
+      document.getElementById('toM').value = to.m.toString().padStart(2, '0');
+      document.getElementById('toS').value = to.s.toString().padStart(2, '0');
+    }
+
+    function renderInteractiveTopology(pairs) {
+      topoDragState.cachedPairs = pairs;
+      const svg = document.getElementById('topoSvg');
+      svg.innerHTML = '';
+
+      const width = svg.clientWidth || 1360;
+      const height = 320;
+
+      const countMap = {};
+      pairs.forEach(p => {
+        countMap[p.source] = (countMap[p.source] || 0) + 1;
+        countMap[p.destination] = (countMap[p.destination] || 0) + 1;
+      });
+
+      const endpoints = Object.keys(countMap);
+      if (endpoints.length === 0) return;
+
+      let hubIp = endpoints[0];
+      let maxCount = -1;
+      endpoints.forEach(ip => {
+        if (countMap[ip] > maxCount) {
+          maxCount = countMap[ip];
+          hubIp = ip;
+        }
+      });
+      const clientIps = endpoints.filter(ip => ip !== hubIp);
+
+      if (!topoDragState.nodePositions[hubIp]) {
+        topoDragState.nodePositions[hubIp] = { x: 150, y: height / 2 };
+      }
+      clientIps.forEach((ip, idx) => {
+        if (!topoDragState.nodePositions[ip]) {
+          topoDragState.nodePositions[ip] = {
+            x: width - 180,
+            y: (height / (clientIps.length + 1)) * (idx + 1)
+          };
+        }
+      });
+
+      const isWhite = THEMES[currentThemeIdx] === "white";
+      const pillBg = isWhite ? "#ffffff" : "#111827";
+      const pillBorder = isWhite ? "#94a3af" : "#4b5563";
+
+      const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      Object.keys(COLOR_PALETTE).forEach(k => {
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+        marker.setAttribute("id", `arrow-${k}`);
+        marker.setAttribute("viewBox", "0 0 10 10");
+        marker.setAttribute("refX", "8");
+        marker.setAttribute("refY", "5");
+        marker.setAttribute("markerWidth", "6");
+        marker.setAttribute("markerHeight", "6");
+        marker.setAttribute("orient", "auto-start-reverse");
+        
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", "M 0 1 L 10 5 L 0 9 z");
+        path.setAttribute("fill", COLOR_PALETTE[k].hex);
+        marker.appendChild(path);
+        defs.appendChild(marker);
+      });
+      svg.appendChild(defs);
+
+      const routeGroups = {};
+      pairs.forEach((p, idx) => {
+        const key = [p.source, p.destination].sort().join("<->");
+        if (!routeGroups[key]) routeGroups[key] = [];
+        routeGroups[key].push({ pair: p, globalIdx: idx });
+      });
+
+      const STAGGER_T = [0.35, 0.65, 0.50, 0.25, 0.75];
+
+      Object.keys(routeGroups).forEach(key => {
+        const group = routeGroups[key];
+        const totalInRoute = group.length;
+
+        group.forEach((item, localIdx) => {
+          const p = item.pair;
+          const p1 = topoDragState.nodePositions[p.source];
+          const p2 = topoDragState.nodePositions[p.destination];
+          if (!p1 || !p2) return;
+
+          const conf = COLOR_PALETTE[p.stream_label] || COLOR_PALETTE[p.band] || { hex: "#38bdf8" };
+
+          const arcMultiplier = (localIdx - (totalInRoute - 1) / 2);
+          const baseArc = p.direction === "TX" ? -40 : 40;
+          const fanoutOffset = baseArc + (arcMultiplier * 50);
+
+          const midX = (p1.x + p2.x) / 2;
+          const midY = (p1.y + p2.y) / 2 + fanoutOffset;
+
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("d", `M ${p1.x} ${p1.y} Q ${midX} ${midY} ${p2.x} ${p2.y}`);
+          path.setAttribute("fill", "none");
+          path.setAttribute("stroke", conf.hex);
+          path.setAttribute("stroke-width", "2");
+          path.setAttribute("marker-end", `url(#arrow-${p.stream_label || p.band})`);
+          path.setAttribute("class", "flowing-edge");
+          svg.appendChild(path);
+
+          const pillId = `pill-${p.pair_id}-${p.stream_label}`;
+          if (!topoDragState.pillPositions[pillId]) {
+            const tParam = STAGGER_T[localIdx % STAGGER_T.length];
+            const defX = Math.pow(1 - tParam, 2) * p1.x + 2 * (1 - tParam) * tParam * midX + Math.pow(tParam, 2) * p2.x;
+            const defY = Math.pow(1 - tParam, 2) * p1.y + 2 * (1 - tParam) * tParam * midY + Math.pow(tParam, 2) * p2.y;
+            topoDragState.pillPositions[pillId] = { x: defX, y: defY };
+          }
+
+          const pillPos = topoDragState.pillPositions[pillId];
+          const labelText = `${p.stream_label}: RMS ${p.metrics.rms} MB/s`;
+          const pillWidth = labelText.length * 7.4 + 18;
+          const pillHeight = 22;
+
+          const gLabel = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          gLabel.setAttribute("class", "draggable-pill");
+          gLabel.setAttribute("data-id", pillId);
+
+          const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          rect.setAttribute("x", pillPos.x - pillWidth / 2);
+          rect.setAttribute("y", pillPos.y - pillHeight / 2);
+          rect.setAttribute("width", pillWidth);
+          rect.setAttribute("height", pillHeight);
+          rect.setAttribute("rx", "11");
+          rect.setAttribute("fill", pillBg);
+          rect.setAttribute("stroke", pillBorder);
+          rect.setAttribute("stroke-width", "1.2");
+          rect.setAttribute("opacity", "0.96");
+          gLabel.appendChild(rect);
+
+          const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          text.setAttribute("x", pillPos.x);
+          text.setAttribute("y", pillPos.y + 4);
+          text.setAttribute("fill", conf.hex);
+          text.setAttribute("font-size", "11px");
+          text.setAttribute("font-weight", "bold");
+          text.setAttribute("text-anchor", "middle");
+          text.textContent = labelText;
+          gLabel.appendChild(text);
+
+          gLabel.addEventListener('mousedown', (e) => startDrag(e, 'pill', pillId));
+          svg.appendChild(gLabel);
+        });
+      });
+
+      endpoints.forEach(ip => {
+        const pt = topoDragState.nodePositions[ip];
+        if (!pt) return;
+
+        const gNode = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        gNode.setAttribute("class", "draggable-node");
+        gNode.setAttribute("data-id", ip);
+
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", pt.x);
+        circle.setAttribute("cy", pt.y);
+        circle.setAttribute("r", "16");
+        circle.setAttribute("fill", isWhite ? "#ffffff" : "#1e293b");
+        circle.setAttribute("stroke", "#38bdf8");
+        circle.setAttribute("stroke-width", "2.5");
+
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", pt.x);
+        label.setAttribute("y", pt.y + 28);
+        label.setAttribute("fill", isWhite ? "#0f172a" : "#f3f4f6");
+        label.setAttribute("font-size", "11px");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("text-anchor", "middle");
+        label.textContent = ip;
+
+        gNode.appendChild(circle);
+        gNode.appendChild(label);
+
+        gNode.addEventListener('mousedown', (e) => startDrag(e, 'node', ip));
+        svg.appendChild(gNode);
+      });
+    }
+
+    function startDrag(evt, type, id) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      const startPos = (type === 'node') ? topoDragState.nodePositions[id] : topoDragState.pillPositions[id];
+
+      topoDragState.activeDrag = {
+        type: type,
+        id: id,
+        startX: evt.clientX,
+        startY: evt.clientY,
+        origX: startPos.x,
+        origY: startPos.y
+      };
+
+      window.addEventListener('mousemove', onDragging);
+      window.addEventListener('mouseup', stopDrag);
+    }
+
+    function onDragging(evt) {
+      if (!topoDragState.activeDrag) return;
+      const drag = topoDragState.activeDrag;
+      const dx = evt.clientX - drag.startX;
+      const dy = evt.clientY - drag.startY;
+
+      const targetDict = (drag.type === 'node') ? topoDragState.nodePositions : topoDragState.pillPositions;
+      targetDict[drag.id] = {
+        x: drag.origX + dx,
+        y: drag.origY + dy
+      };
+
+      if (topoDragState.cachedPairs) {
+        renderInteractiveTopology(topoDragState.cachedPairs);
+      }
+    }
+
+    function stopDrag() {
+      topoDragState.activeDrag = null;
+      window.removeEventListener('mousemove', onDragging);
+      window.removeEventListener('mouseup', stopDrag);
+    }
+
+    document.getElementById('btnResetTopology').addEventListener('click', () => {
+      topoDragState.nodePositions = {};
+      topoDragState.pillPositions = {};
+      if (topoDragState.cachedPairs) {
+        renderInteractiveTopology(topoDragState.cachedPairs);
+      }
+    });
+
+    // 全域數據清空邏輯 (Clear Data)
+    document.getElementById('btnClearData').addEventListener('click', async () => {
+      if (!confirm(currentLang === "zh-TW" ? "確認清空目前載入的所有測試數據與圖表？" : "Clear all currently loaded test telemetry and chart datasets?")) {
+        return;
+      }
+
+      // 1. 重置 Python WASM 內部快取
+      if (pyodideCore) {
+        await pyodideCore.runPythonAsync(`reset_session_data()`);
+      }
+
+      // 2. 銷毀 Chart.js 實體
+      if (chartObj) {
+        chartObj.destroy();
+        chartObj = null;
+      }
+
+      // 3. 清除 Topo SVG 與拖曳快取
+      topoDragState.nodePositions = {};
+      topoDragState.pillPositions = {};
+      topoDragState.cachedPairs = null;
+      const svg = document.getElementById('topoSvg');
+      if (svg) svg.innerHTML = '';
+
+      // 4. 重置 Session 狀態與按鈕
+      currentSessionJsonc = null;
+      currentSourceBaseName = "ixchariot_result";
+      globalMaxDuration = 20;
+      updateRangeInputsFromSec(0, 0);
+
+      document.getElementById('fileInfoArea').style.display = 'none';
+      document.getElementById('infoFileName').textContent = '-';
+      document.getElementById('fileTstInput').value = '';
+      document.getElementById('fileJsoncInput').value = '';
+
+      document.getElementById('exportBtn').classList.add('disabled');
+      document.getElementById('btnClearData').classList.add('disabled');
+    });
+
+    function updateUI(meta, pairs) {
+      const t = I18N[currentLang];
+      globalMaxDuration = meta.duration_sec;
+      updateRangeInputsFromSec(0, globalMaxDuration);
+
+      document.getElementById('fileInfoArea').style.display = 'block';
+      document.getElementById('infoSourceType').textContent = meta.engine_version || 'IxChariot';
+      document.getElementById('infoPairCount').textContent = `${pairs.length} ${t.pairsUnit}`;
+      document.getElementById('infoDuration').textContent = formatEngineeringDuration(meta.duration_sec);
+      document.getElementById('infoDownsamples').textContent = `${meta.rendered_points_per_pair} ${t.pointsUnit}`;
+
+      const filterIndicator = document.getElementById('filterStateIndicator');
+      if (filterSpikesEnabled) {
+        filterIndicator.textContent = t.filterActive;
+        filterIndicator.style.color = "var(--accent-purple)";
+      } else {
+        filterIndicator.textContent = t.filterRaw;
+        filterIndicator.style.color = "var(--sub)";
+      }
+
+      const bandsContainer = document.getElementById('infoBands');
+      bandsContainer.innerHTML = '';
+      const tags = meta.detected_tags || pairs.map(p => p.stream_label);
+      tags.forEach(tagItem => {
+        const span = document.createElement('span');
+        let cls = 'tag';
+        if (tagItem.includes('56G')) cls += ' tag-band-56g';
+        else if (tagItem.includes('6G')) cls += ' tag-band-6g';
+        else if (tagItem.includes('5G')) cls += ' tag-band-5g';
+        else if (tagItem.includes('2G')) cls += ' tag-band-2g';
+        span.className = cls;
+        span.textContent = tagItem;
+        bandsContainer.appendChild(span);
+      });
+
+      const statBody = document.getElementById('statSummaryBody');
+      statBody.innerHTML = '';
+      pairs.forEach(p => {
+        const tr = document.createElement('tr');
+        const conf = COLOR_PALETTE[p.stream_label] || COLOR_PALETTE[p.band] || { hex: "#38bdf8" };
+        tr.innerHTML = `
+          <td style="font-weight: 700; color: ${conf.hex};">#${p.pair_id} ${p.stream_label}</td>
+          <td>${p.source} &rarr; ${p.destination}</td>
+          <td><span class="tag ${COLOR_PALETTE[p.band]?.class || ''}">${p.band} (${p.direction})</span></td>
+          <td class="stat-highlight val-peak">${p.metrics.peak} MB/s</td>
+          <td class="stat-highlight val-rms">${p.metrics.rms} MB/s</td>
+          <td class="stat-highlight val-avg">${p.metrics.avg} MB/s</td>
+          <td class="stat-highlight val-min">${p.metrics.min} MB/s</td>
+        `;
+        statBody.appendChild(tr);
+      });
+
+      renderInteractiveTopology(pairs);
+
+      const datasets = pairs.map(pair => {
+        const key = pair.stream_label;
+        const conf = COLOR_PALETTE[key] || COLOR_PALETTE[pair.band] || { hex: "#94a3af" };
+        const is2G = pair.stream_label.includes("2G") || pair.band === "2G";
+
+        const legendTitle = `${pair.stream_label} [RMS: ${pair.metrics.rms} | Pk: ${pair.metrics.peak} | Min: ${pair.metrics.min} MB/s]`;
+
+        return {
+          label: legendTitle,
+          data: pair.timeseries.map(pt => ({ x: pt[0], y: pt[1] })),
+          borderColor: conf.hex,
+          backgroundColor: conf.hex,
+          borderWidth: is2G ? 2.2 : 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          tension: 0.1,
+          yAxisID: (useDualAxis && is2G) ? 'y2' : 'y'
+        };
+      });
+
+      renderChart(meta.duration_sec, datasets);
+      document.getElementById('exportBtn').classList.remove('disabled');
+      document.getElementById('btnClearData').classList.remove('disabled');
+    }
+
+    const pinnedEndLinePlugin = {
+      id: 'pinnedEndLine',
+      afterDraw: (chart) => {
+        const xScale = chart.scales.x;
+        const yScale = chart.scales.y;
+        const maxT = chart.options.plugins.pinnedEndLine?.maxDuration;
+        if (!maxT || !xScale || !yScale) return;
+
+        if (xScale.min <= maxT && xScale.max >= maxT) {
+          const xPixel = xScale.getPixelForValue(maxT);
+          const ctx = chart.ctx;
+          const isWhite = THEMES[currentThemeIdx] === "white";
+          const lineCol = isWhite ? '#0284c7' : '#38bdf8';
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(xPixel, yScale.top);
+          ctx.lineTo(xPixel, yScale.bottom);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = lineCol;
+          ctx.stroke();
+
+          ctx.fillStyle = lineCol;
+          ctx.font = '10px monospace';
+          ctx.textAlign = 'right';
+          ctx.fillText('(End)', xPixel - 4, yScale.top + 14);
+          ctx.restore();
+        }
+      }
+    };
+
+    function renderChart(maxDuration, datasets) {
+      const t = I18N[currentLang];
+      const ctx = document.getElementById('throughputChart').getContext('2d');
+      if (chartObj) chartObj.destroy();
+
+      const isWhite = THEMES[currentThemeIdx] === "white";
+      const gridColor = isWhite ? '#e2e8f0' : (THEMES[currentThemeIdx] === "slate" ? '#334155' : '#1f2937');
+      const subTextColor = isWhite ? '#64748b' : '#9ca3af';
+      const primaryTextColor = isWhite ? '#0f172a' : '#f3f4f6';
+
+      const scalesConfig = {
+        x: {
+          type: 'linear',
+          min: 0,
+          max: maxDuration,
+          bounds: 'data',
+          clip: true,
+          title: { 
+            display: true, 
+            text: t.xAxisTitle, 
+            color: subTextColor,
+            font: { size: 12, weight: '600' }
+          },
+          grid: { color: gridColor },
+          ticks: { 
+            color: subTextColor,
+            autoSkip: true,
+            maxRotation: 0,
+            callback: function(val) { return formatTickValue(val, this); }
+          }
+        },
+        y: {
+          type: 'linear',
+          position: 'left',
+          min: 0,
+          title: { 
+            display: true, 
+            text: useDualAxis ? t.yAxis5G : t.yAxisCommon, 
+            color: isWhite ? '#0284c7' : '#38bdf8',
+            font: { size: 12, weight: '600' }
+          },
+          grid: { color: gridColor },
+          ticks: { 
+            color: isWhite ? '#0284c7' : '#38bdf8',
+            callback: function(val) { return `${val} MB/s`; }
+          }
+        }
+      };
+
+      if (useDualAxis) {
+        scalesConfig.y2 = {
+          type: 'linear',
+          position: 'right',
+          min: 0,
+          max: 300,
+          title: { 
+            display: true, 
+            text: t.yAxis2G, 
+            color: '#f59e0b',
+            font: { size: 12, weight: '600' }
+          },
+          grid: { drawOnChartArea: false },
+          ticks: { 
+            color: '#f59e0b',
+            callback: function(val) { return `${val} MB/s`; }
+          }
+        };
+      }
+
+      chartObj = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: datasets },
+        plugins: [pinnedEndLinePlugin],
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: 'nearest', intersect: false },
+          scales: scalesConfig,
+          plugins: {
+            pinnedEndLine: { maxDuration: maxDuration },
+            tooltip: {
+              callbacks: {
+                title: function(items) {
+                  return `${t.currentTimePrefix}${formatEngineeringDuration(items[0].parsed.x)}`;
+                },
+                label: function(context) {
+                  return ` ${context.dataset.label.split(' [')[0]}: ${context.parsed.y} MB/s`;
+                }
+              }
+            },
+            legend: {
+              labels: { color: primaryTextColor, font: { family: 'monospace', size: 11 }, usePointStyle: true }
+            },
+            zoom: {
+              limits: { x: { min: 0, max: maxDuration } },
+              pan: { 
+                enabled: true, 
+                mode: 'x', 
+                threshold: 5,
+                onPanComplete: function({ chart }) {
+                  const x = chart.scales.x;
+                  updateRangeInputsFromSec(x.min, x.max);
+                }
+              },
+              zoom: {
+                wheel: { enabled: true, speed: 0.1 },
+                pinch: { enabled: true },
+                mode: 'x',
+                onZoomComplete: function({ chart }) {
+                  const x = chart.scales.x;
+                  updateRangeInputsFromSec(x.min, x.max);
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    document.getElementById('btnToggleTheme').addEventListener('click', () => {
+      currentThemeIdx = (currentThemeIdx + 1) % THEMES.length;
+      const newTheme = THEMES[currentThemeIdx];
+      if (newTheme === "dark") {
+        document.documentElement.removeAttribute("data-theme");
+      } else {
+        document.documentElement.setAttribute("data-theme", newTheme);
+      }
+      updateLanguageUI();
+      if (currentSessionJsonc) {
+        const res = JSON.parse(currentSessionJsonc);
+        updateUI(res.metadata, res.pairs);
+      }
+    });
+
+    document.getElementById('btnApplyRange').addEventListener('click', () => {
+      if (!chartObj) return;
+      const startSec = dhmsToSec(
+        document.getElementById('fromD').value,
+        document.getElementById('fromH').value,
+        document.getElementById('fromM').value,
+        document.getElementById('fromS').value
+      );
+      const endSec = dhmsToSec(
+        document.getElementById('toD').value,
+        document.getElementById('toH').value,
+        document.getElementById('toM').value,
+        document.getElementById('toS').value
+      );
+
+      if (startSec >= endSec) {
+        alert(currentLang === "zh-TW" ? "起始時間必須小於結束時間" : "Start time must be less than End time");
+        return;
+      }
+
+      const clampedStart = Math.max(0, startSec);
+      const clampedEnd = Math.min(globalMaxDuration, endSec);
+
+      chartObj.zoomScale('x', { min: clampedStart, max: clampedEnd });
+    });
+
+    document.getElementById('btnExportViewPng').addEventListener('click', () => {
+      if (!chartObj) return;
+      const x = chartObj.scales.x;
+      const f = secToDhms(x.min);
+      const t = secToDhms(x.max);
+      const timeRangeStr = `${f.d}d${f.h}h_to_${t.d}d${t.h}h`;
+
+      const srcCanvas = document.getElementById('throughputChart');
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = srcCanvas.width;
+      exportCanvas.height = srcCanvas.height;
+      const expCtx = exportCanvas.getContext('2d');
+
+      const isWhite = THEMES[currentThemeIdx] === "white";
+      const bgColor = isWhite ? "#ffffff" : (THEMES[currentThemeIdx] === "slate" ? "#1e293b" : "#111827");
+      expCtx.fillStyle = bgColor;
+      expCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+      expCtx.drawImage(srcCanvas, 0, 0);
+
+      const imgData = exportCanvas.toDataURL('image/png', 1.0);
+      const a = document.createElement('a');
+      a.href = imgData;
+      a.download = `${currentSourceBaseName}_view_${timeRangeStr}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
+
+    document.getElementById('btnExportViewJsonc').addEventListener('click', async () => {
+      if (!chartObj || !pyodideCore) return;
+      const x = chartObj.scales.x;
+      const start = x.min;
+      const end = x.max;
+
+      const pyRes = await pyodideCore.runPythonAsync(`slice_viewport_jsonc(${start}, ${end}, filter_spikes=${filterSpikesEnabled ? 'True' : 'False'})`);
+      const res = JSON.parse(pyRes);
+      if (!res.success) {
+        alert("Viewport slice failed: " + res.error);
+        return;
+      }
+
+      const f = secToDhms(start);
+      const t = secToDhms(end);
+      const timeRangeStr = `${f.d}d${f.h}h_to_${t.d}d${t.h}h`;
+
+      const blob = new Blob([pyRes], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentSourceBaseName}_slice_${timeRangeStr}.jsonc`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('btnToggleLang').addEventListener('click', () => {
+      currentLang = currentLang === "zh-TW" ? "en-US" : "zh-TW";
+      document.documentElement.lang = currentLang;
+      updateLanguageUI();
+      if (currentSessionJsonc) {
+        const res = JSON.parse(currentSessionJsonc);
+        updateUI(res.metadata, res.pairs);
+      }
+    });
+
+    document.getElementById('filterSpikeBtn').addEventListener('click', async function() {
+      if (!pyodideCore) return;
+      filterSpikesEnabled = !filterSpikesEnabled;
+      const btn = document.getElementById('filterSpikeBtn');
+      const t = I18N[currentLang];
+      if (filterSpikesEnabled) {
+        btn.classList.add('btn-filter-active');
+        btn.textContent = t.btnFilterOn;
+      } else {
+        btn.classList.remove('btn-filter-active');
+        btn.textContent = t.btnFilterOff;
+      }
+
+      const pyRes = await pyodideCore.runPythonAsync(`toggle_filter_state(${filterSpikesEnabled ? 'True' : 'False'})`);
+      const res = JSON.parse(pyRes);
+      if (res.success) {
+        currentSessionJsonc = pyRes;
+        updateUI(res.metadata, res.pairs);
+      }
+    });
+
+    document.getElementById('toggleDualAxisBtn').addEventListener('click', () => {
+      useDualAxis = !useDualAxis;
+      const btn = document.getElementById('toggleDualAxisBtn');
+      const t = I18N[currentLang];
+      btn.textContent = useDualAxis ? t.btnDualAxis : t.btnSingleAxis;
+      if (currentSessionJsonc) {
+        const res = JSON.parse(currentSessionJsonc);
+        updateUI(res.metadata, res.pairs);
+      }
+    });
+
+    document.getElementById('resetZoomBtn').addEventListener('click', () => {
+      if (chartObj) {
+        chartObj.resetZoom();
+        updateRangeInputsFromSec(0, globalMaxDuration);
+      }
+    });
+
+    document.getElementById('fileTstInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file || !pyodideCore) return;
+      currentSourceBaseName = file.name.replace(/\.[^/.]+$/, "");
+      document.getElementById('infoFileName').textContent = file.name;
+
+      const reader = new FileReader();
+      reader.onload = async function(evt) {
+        const uint8 = new Uint8Array(evt.target.result);
+        pyodideCore.globals.set("raw_tst_bytes", uint8);
+        const pyRes = await pyodideCore.runPythonAsync(`parse_tst_binary(raw_tst_bytes, filter_spikes=${filterSpikesEnabled ? 'True' : 'False'})`);
+        const res = JSON.parse(pyRes);
+        if (!res.success) { alert(res.error); return; }
+        currentSessionJsonc = pyRes;
+        updateUI(res.metadata, res.pairs);
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    document.getElementById('fileJsoncInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file || !pyodideCore) return;
+      currentSourceBaseName = file.name.replace(/\.[^/.]+$/, "");
+      document.getElementById('infoFileName').textContent = file.name;
+
+      const reader = new FileReader();
+      reader.onload = async function(evt) {
+        pyodideCore.globals.set("raw_jsonc_input", evt.target.result);
+        const pyRes = await pyodideCore.runPythonAsync(`parse_jsonc_content(raw_jsonc_input, filter_spikes=${filterSpikesEnabled ? 'True' : 'False'})`);
+        const res = JSON.parse(pyRes);
+        if (!res.success) { alert("JSONC Error: " + res.error); return; }
+        currentSessionJsonc = pyRes;
+        updateUI(res.metadata, res.pairs);
+      };
+      reader.readAsText(file);
+    });
+
+    document.getElementById('sim144hBtn').addEventListener('click', async function() {
+      if (!pyodideCore) return;
+      document.getElementById('infoFileName').textContent = "SIM_144H_STRESS_TEST.tst";
+      currentSourceBaseName = "WAP_144H_AGING_TEST";
+      const pyRes = await pyodideCore.runPythonAsync(`generate_stress_dataset(days=6, filter_spikes=${filterSpikesEnabled ? 'True' : 'False'})`);
+      const res = JSON.parse(pyRes);
+      currentSessionJsonc = pyRes;
+      updateUI(res.metadata, res.pairs);
+    });
+
+    document.getElementById('sim30dBtn').addEventListener('click', async function() {
+      if (!pyodideCore) return;
+      document.getElementById('infoFileName').textContent = "SIM_30DAYS_RELIABILITY.tst";
+      currentSourceBaseName = "WAP_30DAYS_AGING_TEST";
+      const pyRes = await pyodideCore.runPythonAsync(`generate_stress_dataset(days=30, filter_spikes=${filterSpikesEnabled ? 'True' : 'False'})`);
+      const res = JSON.parse(pyRes);
+      currentSessionJsonc = pyRes;
+      updateUI(res.metadata, res.pairs);
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', function() {
+      if (!currentSessionJsonc) return;
+      const blob = new Blob([currentSessionJsonc], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentSourceBaseName}_telemetry_full.jsonc`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      updateLanguageUI();
+      initializeEngine();
+    });
+  </script>
+</body>
+</html>
